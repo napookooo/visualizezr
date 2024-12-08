@@ -145,7 +145,7 @@ void loadGame(GameState *game){
   // if (game->chunk == NULL){
   //   printf("error load a little remedy.mp3: %s\n", Mix_GetError());
   // }
-  game->music = Mix_LoadMUS("a little remedy.wav");
+  game->music = Mix_LoadMUS("a little remedy.mp3");
   if (game->music == NULL){
     printf("error load a little remedy.mp3: %s\n", Mix_GetError());
   }
