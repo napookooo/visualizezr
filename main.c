@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include "SDL2/SDL.h"
+#include "SDL2/SDL_audio.h"
 #include "SDL2/SDL_mixer.h"
 #include <time.h>
 
@@ -7,19 +8,28 @@ typedef struct{
   int x, y;
 } Man;
 
+typedef struct{
+  int space;
+} Keyboard;
+
 typedef struct {
   Man man;
 
   Mix_Music *music;
   Mix_Chunk *chunk;
 
+  SDL_AudioStream *stream;
+
   SDL_Renderer *renderer;
+
+  Keyboard keyState;
 
 } GameState;
 
 int processEvents(SDL_Window *window, GameState *game);
 void doRender(SDL_Renderer *renderer, GameState *game);
 void loadGame(GameState *game);
+void spaceFunctions(GameState *game);
 
 
 // MAIN FUNCTION
@@ -66,6 +76,10 @@ int main(int argc, char *argv[]){
     Mix_FreeChunk(game.chunk);
   }
 
+  if (game.stream != NULL){
+    SDL_FreeAudioStream(game.stream);
+  }
+
   SDL_DestroyWindow(window);
   SDL_DestroyRenderer(renderer);
 
@@ -92,17 +106,13 @@ int processEvents(SDL_Window *window, GameState *game){
         switch (event.key.keysym.sym) {
           case SDLK_ESCAPE:
             done = 1;
-          case SDLK_SPACE:
-            printf("Playing music %d\n", Mix_PlayingMusic());
-            if (Mix_PlayingMusic()){
-              if (Mix_PausedMusic()){
-                Mix_ResumeMusic();
-              }else {
-                Mix_PauseMusic();
-              }
-            }
-            else if (!Mix_PlayingMusic()){
-              Mix_PlayMusic(game->music, -1);
+          case SDLK_t:
+            // for (int i=0; i<10; i++){
+            //   printf("audio device name: %s\n", SDL_GetAudioDeviceName(i, SDL_TRUE));
+            // }
+            int avail = SDL_AudioStreamAvailable(game->stream);  // this is in bytes, not samples!
+            if (avail < 100) {
+              printf("I'm still waiting on %d bytes of data!\n", 100 - avail);
             }
           break;
         }
@@ -115,17 +125,24 @@ int processEvents(SDL_Window *window, GameState *game){
   }
 
   const Uint8 *state = SDL_GetKeyboardState(NULL);
-  if(state[SDL_SCANCODE_LEFT]){game->man.x -= 5;}
-  if(state[SDL_SCANCODE_RIGHT]){game->man.x += 5;}
-  if(state[SDL_SCANCODE_UP]){game->man.y -= 5;}
-  if(state[SDL_SCANCODE_DOWN]){game->man.y += 5;}
+  if(state[SDL_SCANCODE_A]){game->man.x -= 5;}
+  if(state[SDL_SCANCODE_D]){game->man.x += 5;}
+  if(state[SDL_SCANCODE_W]){game->man.y -= 5;}
+  if(state[SDL_SCANCODE_S]){game->man.y += 5;}
+  if (state[SDL_SCANCODE_SPACE]){
+    spaceFunctions(game);
+    game->keyState.space = 1;
+  }
+  else{
+    game->keyState.space = 0;
+  }
 
   return done;
 }
 
 
 void doRender(SDL_Renderer *renderer, GameState *game){
-  SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
+  SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
   SDL_RenderClear(renderer);
   SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
 
@@ -141,17 +158,50 @@ void loadGame(GameState *game){
     printf( "SDL_mixer could not initialize! SDL_mixer Error: %s\n", Mix_GetError() );
   }
 
-  // game->chunk = Mix_LoadWAV("a little remedy.wav");
-  // if (game->chunk == NULL){
-  //   printf("error load a little remedy.mp3: %s\n", Mix_GetError());
-  // }
   game->music = Mix_LoadMUS("a little remedy.mp3");
   if (game->music == NULL){
     printf("error load a little remedy.mp3: %s\n", Mix_GetError());
   }
+  
+  // You put data at Sint16/mono/22050Hz, you get back data at Float32/stereo/48000Hz
+  game->stream = SDL_NewAudioStream(AUDIO_S16, 1, 22050, AUDIO_F32, 2, 48000);
+  if (game->stream == NULL) {
+    printf("Uhoh, stream failed to create: %s\n", SDL_GetError());
+  }
+
+  printf("%d\n", Mix_GetNumMusicDecoders());
+
+  game->keyState.space = 0;
+
 
   game->man.x = 900;
   game->man.y = 500;
 
 }
 
+void spaceFunctions(GameState *game){
+
+    printf("Playing music %d\n", Mix_PlayingMusic());
+    if (!game->keyState.space){
+      if (Mix_PlayingMusic()){
+        if (Mix_PausedMusic()){
+          Mix_ResumeMusic();
+        }else {
+          Mix_PauseMusic();
+        }
+      }
+      else if (!Mix_PlayingMusic()){
+        Mix_PlayMusic(game->music, -1);
+      }
+    }
+
+  Sint16 samples[1024];
+  int num_samples = sizeof(int) * 100;
+  // you tell it the number of _bytes_, not samples, you're putting!
+  int rc = SDL_AudioStreamPut(game->stream, samples, num_samples * sizeof (Sint16));
+  if (rc == -1) {
+    printf("Uhoh, failed to put samples in stream: %s\n", SDL_GetError());
+    return;
+  }
+
+}
